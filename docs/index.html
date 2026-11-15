@@ -51,6 +51,7 @@ button:disabled{opacity:.6}
   <input type="text" id="q" placeholder="pl. Mészáros Norbert, Bíró Ottó" autocomplete="off">
   <div class="opts">
     <div><label for="org">Szervező</label><select id="org"><option value="">Mindenhol</option></select></div>
+    <div><label for="rnd">Forduló (üresen: bármelyik)</label><input type="text" id="rnd" inputmode="numeric" placeholder="pl. 14" autocomplete="off"></div>
     <label class="chk"><input type="checkbox" id="past"> Már lejátszott meccsek is</label>
   </div>
   <div class="hint" id="stat">Adatok betöltése…</div>
@@ -109,20 +110,31 @@ function card(rec, hits) {
   return c;
 }
 
+const roundOf = r => { const m = /(\d+)\.\s*forduló/i.exec(r.cim || ""); return m ? +m[1] : null; };
+
 function render() {
   const out = $("out"); out.replaceChildren();
   const names = $("q").value.split(/[;,\n]+/).map(s => s.trim()).filter(Boolean);
   const org = $("org").value, showPast = $("past").checked;
+  const rtxt = $("rnd").value.trim(), rnd = /^\d+$/.test(rtxt) ? +rtxt : null;
+  if (rtxt && rnd === null) { out.append(el("p", "summary", "A fordulónak számnak kell lennie (pl. 14).")); return; }
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const isPast = r => r.datum && new Date(r.datum) < today;
+  const pool = DATA.meccsek.filter(r => !org || r.szervezo === org);
+  const inRound = rnd === null ? pool : pool.filter(r => roundOf(r) === rnd);
+  const usePastFilter = rnd === null && !showPast;  // megadott fordulónál a lejátszott meccseket is mutatja
   for (const name of names) {
     const tokens = name.split(/\s+/).map(norm).filter(Boolean);
-    let hits = DATA.meccsek.filter(r => (!org || r.szervezo === org))
-      .map(r => [r, findHits(r, tokens)]).filter(([, h]) => h.size);
-    const isPast = r => r.datum && new Date(r.datum) < today;
-    const hidden = showPast ? 0 : hits.filter(([r]) => isPast(r)).length;
-    if (!showPast) hits = hits.filter(([r]) => !isPast(r));
-    out.append(el("h2", "", name + (org ? " · " + org : "")));
-    let s = hits.length ? hits.length + " találat." : "Nincs találat.";
+    let hits = inRound.map(r => [r, findHits(r, tokens)]).filter(([, h]) => h.size);
+    const hidden = usePastFilter ? hits.filter(([r]) => isPast(r)).length : 0;
+    if (usePastFilter) hits = hits.filter(([r]) => !isPast(r));
+    out.append(el("h2", "", name + (org ? " · " + org : "") + (rnd !== null ? " · " + rnd + ". forduló" : "")));
+    let s;
+    if (hits.length) s = hits.length + " találat.";
+    else if (rnd !== null && !inRound.length) {
+      const have = [...new Set(pool.map(roundOf).filter(x => x !== null))].sort((a, b) => a - b);
+      s = "Ebből a fordulóból nincs adat az oldalon." + (have.length ? " Az adatok ezeket a fordulókat tartalmazzák: " + have.join(", ") + "." : "");
+    } else s = "Nincs találat.";
     if (hidden) s += " (" + hidden + " már lejátszott meccs rejtve, pipáld be fent a megjelenítésükhöz.)";
     out.append(el("p", "summary", s));
     for (const [r, h] of hits) { const c = card(r, h); if (isPast(r)) c.classList.add("past"); out.append(c); }
@@ -142,7 +154,7 @@ function init() {
   }
 }
 
-["input", "change"].forEach(ev => { $("q").addEventListener(ev, render); $("org").addEventListener(ev, render); $("past").addEventListener(ev, render); });
+["input", "change"].forEach(ev => { $("q").addEventListener(ev, render); $("rnd").addEventListener(ev, render); $("org").addEventListener(ev, render); $("past").addEventListener(ev, render); });
 const b64 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
 
 async function decrypt(blob, pw) {
