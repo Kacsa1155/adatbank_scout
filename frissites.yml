@@ -1,0 +1,32 @@
+name: Adatok frissítése
+
+on:
+  schedule:
+    - cron: "0 5,8,11,14,17,20 * * 4,5,6,0,1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: frissites
+
+jobs:
+  frissit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scrape.py
+        env:
+          ADATBANK_JELSZO: ${{ secrets.ADATBANK_JELSZO }}
+      - name: Mentés
+        run: |
+          git config user.name "adatbank-scout"
+          git config user.email "actions@users.noreply.github.com"
+          git rm -q -f --ignore-unmatch docs/adatok.json
+          git add docs/adatok.enc
+          git diff --cached --quiet || (git commit -m "Adatok frissítése" && git push)
