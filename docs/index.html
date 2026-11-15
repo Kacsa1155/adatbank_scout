@@ -146,9 +146,9 @@ function init() {
   orgs.forEach(o => { const op = el("option", "", o); op.value = o; $("org").append(op); });
   const st = $("stat");
   if (!DATA.meccsek.length) { st.textContent = "Nincs mérkőzés az adatok között."; return; }
-  st.textContent = DATA.meccsek.length + " mérkőzés · utolsó frissítés: " + DATA.frissitve;
+  st.textContent = DATA.meccsek.length + " mérkőzés · adatok állapota: " + DATA.frissitve;
   const ageH = (Date.now() - new Date(DATA.frissitve_iso)) / 36e5;
-  if (ageH > 12) {
+  if (ageH > 36) {
     st.textContent += " (" + Math.round(ageH) + " órája, lehet, hogy elavult)";
     st.classList.add("warn");
   }
