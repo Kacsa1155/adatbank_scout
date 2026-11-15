@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="hu"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Adatbank-scout</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--text:#1c2330;--muted:#667085;--line:#e2e5ea;--accent:#1f6feb;--mark:#fff1a8;--warn:#b54708}
+@media (prefers-color-scheme: dark){:root{--bg:#14171c;--card:#1d222a;--text:#e8ebf0;--muted:#98a2b3;--line:#2c333d;--accent:#5b9cff;--mark:#5a4b00;--warn:#fdb022}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,Segoe UI,Arial,sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.5rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+.panel,.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:2px}
+input[type=text],input[type=password],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:end}
+@media (max-width:560px){.opts{grid-template-columns:1fr}}
+.chk{display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--text);margin:0;padding-bottom:8px}
+.hint{color:var(--muted);font-size:.85rem;margin-top:8px}
+.warn{color:var(--warn);font-weight:600}
+h2{font-size:1.1rem;margin:22px 0 6px}
+.summary{color:var(--muted);margin:0 0 10px}
+.card h3{font-size:1.05rem;margin:0}
+.meta{color:var(--muted);font-size:.9rem;margin:2px 0 10px}
+table.off{border-collapse:collapse;width:100%;font-size:.95rem}
+table.off th{text-align:left;color:var(--muted);font-weight:500;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top;width:1%}
+table.off td{padding:3px 0}
+mark{background:var(--mark);color:inherit;padding:0 4px;border-radius:4px;font-weight:600}
+.stand{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:.95rem}
+a{color:var(--accent)}
+.past{opacity:.7}
+.err{color:var(--warn);font-weight:600;min-height:1.4em;margin-top:8px}
+button{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+button:disabled{opacity:.6}
+#login{max-width:420px;margin:40px auto}
+</style></head>
+<body><main>
+<h1>Adatbank-scout</h1>
+<p class="sub">Játékvezető keresése: melyik mérkőzésre van kijelölve, kik a további hivatalos személyek, hol áll a két csapat.</p>
+<form id="login" class="panel">
+  <label for="pw">Jelszó</label>
+  <input type="password" id="pw" autocomplete="current-password" autofocus>
+  <label class="chk" style="margin-top:10px"><input type="checkbox" id="rem"> Maradjak bejelentkezve ezen az eszközön</label>
+  <button type="submit" id="lbtn">Belépés</button>
+  <div class="err" id="lmsg"></div>
+</form>
+<div id="app" hidden>
+<div class="panel">
+  <label for="q">Név (több nevet vesszővel válassz el)</label>
+  <input type="text" id="q" placeholder="pl. Mészáros Norbert, Bíró Ottó" autocomplete="off">
+  <div class="opts">
+    <div><label for="org">Szervező</label><select id="org"><option value="">Mindenhol</option></select></div>
+    <label class="chk"><input type="checkbox" id="past"> Már lejátszott meccsek is</label>
+  </div>
+  <div class="hint" id="stat">Adatok betöltése…</div>
+</div>
+<div id="out"></div>
+<p class="hint"><a href="#" id="logout">Kijelentkezés</a></p>
+</div>
+</main>
+<script>
+let DATA = {meccsek: []};
+const $ = id => document.getElementById(id);
+const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+function findHits(rec, tokens) {
+  const hits = new Set();
+  for (const names of Object.values(rec.szemelyek || {}))
+    for (const n of names) if (tokens.every(t => norm(n).includes(t))) hits.add(n);
+  return hits;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function card(rec, hits) {
+  const c = el("div", "card");
+  const t = rec.csapatok || [];
+  c.append(el("h3", "", (t[0] || "?") + " – " + (t[1] || "?")));
+  const meta = el("div", "meta", (rec.datum_txt || "ismeretlen időpont") + " · " + (rec.cim || "") + " · ");
+  const a = el("a", "", "megnyitás az adatbankban");
+  a.href = rec.url; a.target = "_blank"; a.rel = "noopener";
+  meta.append(a); c.append(meta);
+  const tb = el("table", "off");
+  for (const [role, names] of Object.entries(rec.szemelyek || {})) {
+    const tr = el("tr"); tr.append(el("th", "", role));
+    const td = el("td");
+    if (!names.length) td.textContent = "–";
+    names.forEach((n, i) => {
+      if (i) td.append(", ");
+      if (hits.has(n)) td.append(el("mark", "", n)); else td.append(n);
+    });
+    tr.append(td); tb.append(tr);
+  }
+  c.append(tb);
+  const st = el("div", "stand");
+  const tab = rec.tabella || {};
+  const parts = t.filter(x => tab[x] !== undefined);
+  if (parts.length) {
+    st.append("Tabella: ");
+    parts.forEach((x, i) => { if (i) st.append("  ·  "); st.append(x + ": "); st.append(el("b", "", tab[x] + ". hely")); });
+  } else st.textContent = "Tabella: nem található ezen az oldalon";
+  c.append(st);
+  return c;
+}
+
+function render() {
+  const out = $("out"); out.replaceChildren();
+  const names = $("q").value.split(/[;,\n]+/).map(s => s.trim()).filter(Boolean);
+  const org = $("org").value, showPast = $("past").checked;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (const name of names) {
+    const tokens = name.split(/\s+/).map(norm).filter(Boolean);
+    let hits = DATA.meccsek.filter(r => (!org || r.szervezo === org))
+      .map(r => [r, findHits(r, tokens)]).filter(([, h]) => h.size);
+    const isPast = r => r.datum && new Date(r.datum) < today;
+    const hidden = showPast ? 0 : hits.filter(([r]) => isPast(r)).length;
+    if (!showPast) hits = hits.filter(([r]) => !isPast(r));
+    out.append(el("h2", "", name + (org ? " · " + org : "")));
+    let s = hits.length ? hits.length + " találat." : "Nincs találat.";
+    if (hidden) s += " (" + hidden + " már lejátszott meccs rejtve, pipáld be fent a megjelenítésükhöz.)";
+    out.append(el("p", "summary", s));
+    for (const [r, h] of hits) { const c = card(r, h); if (isPast(r)) c.classList.add("past"); out.append(c); }
+  }
+}
+
+function init() {
+  const orgs = [...new Set(DATA.meccsek.map(r => r.szervezo))];
+  orgs.forEach(o => { const op = el("option", "", o); op.value = o; $("org").append(op); });
+  const st = $("stat");
+  if (!DATA.meccsek.length) { st.textContent = "Nincs mérkőzés az adatok között."; return; }
+  st.textContent = DATA.meccsek.length + " mérkőzés · utolsó frissítés: " + DATA.frissitve;
+  const ageH = (Date.now() - new Date(DATA.frissitve_iso)) / 36e5;
+  if (ageH > 12) {
+    st.textContent += " (" + Math.round(ageH) + " órája, lehet, hogy elavult)";
+    st.classList.add("warn");
+  }
+}
+
+["input", "change"].forEach(ev => { $("q").addEventListener(ev, render); $("org").addEventListener(ev, render); $("past").addEventListener(ev, render); });
+const b64 = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
+
+async function decrypt(blob, pw) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    {name: "PBKDF2", salt: b64(blob.salt), iterations: blob.iter, hash: "SHA-256"},
+    base, {name: "AES-GCM", length: 256}, false, ["decrypt"]);
+  const buf = await crypto.subtle.decrypt({name: "AES-GCM", iv: b64(blob.iv)}, key, b64(blob.data));
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+async function login(pw, remember, auto) {
+  const msg = $("lmsg"), btn = $("lbtn");
+  msg.textContent = ""; btn.disabled = true;
+  try {
+    const r = await fetch("adatok.enc?t=" + Date.now());
+    if (r.status === 404) throw new Error("nodata");
+    if (!r.ok) throw new Error("http");
+    DATA = await decrypt(await r.json(), pw);
+  } catch (e) {
+    btn.disabled = false;
+    if (auto) { try { localStorage.removeItem("ab_pw"); } catch (_) {} return; }
+    msg.textContent = e.message === "nodata" ? "Még nincs adat, futtasd le az adatgyűjtést (GitHub, Actions fül)."
+      : e.message === "http" ? "Az adatok most nem érhetők el, próbáld újra."
+      : "Hibás jelszó.";
+    return;
+  }
+  if (remember) { try { localStorage.setItem("ab_pw", pw); } catch (_) {} }
+  $("login").hidden = true; $("app").hidden = false;
+  init(); render(); $("q").focus();
+}
+
+$("login").addEventListener("submit", e => { e.preventDefault(); login($("pw").value, $("rem").checked, false); });
+$("logout").addEventListener("click", e => { e.preventDefault(); try { localStorage.removeItem("ab_pw"); } catch (_) {} location.reload(); });
+try { const saved = localStorage.getItem("ab_pw"); if (saved) login(saved, true, true); } catch (_) {}
+</script></body></html>
