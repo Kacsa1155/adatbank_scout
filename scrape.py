@@ -24,7 +24,7 @@ import adatbank_scout as sc  # noqa: E402
 LIGAK = HERE / "ligak.json"
 OUT = HERE / "docs" / "adatok.enc"  # jelszóval titkosított adat, csak a keresőoldal tudja visszafejteni
 ITER = 250_000
-BACK = int(os.environ.get("VISSZA", "1"))   # a ligak.json-beli fordulótól hány fordulót néz vissza
+BACK = int(os.environ.get("VISSZA", "30"))  # a ligak.json-beli fordulótól hány fordulót néz vissza (30 = az egész szezon, az 1. fordulóig)
 FWD = int(os.environ.get("ELORE", "4"))     # és hányat előre
 WORKERS = 8
 PAUSE = 0.1
@@ -78,10 +78,11 @@ def main():
     if not pw:
         sys.exit("Hiányzik az ADATBANK_JELSZO (GitHub: Settings, Secrets and variables, Actions).")
     cfg = json.loads(LIGAK.read_text(encoding="utf-8"))
-    prev = {}
+    prev, prev_payload = {}, None
     if OUT.exists():
         try:  # az előző futás adata (ha a jelszó megváltozott, nem fejthető vissza, akkor mindent újra letölt)
-            for m in decrypt(OUT.read_text(encoding="utf-8"), pw).get("meccsek", []):
+            prev_payload = decrypt(OUT.read_text(encoding="utf-8"), pw)
+            for m in prev_payload.get("meccsek", []):
                 prev[m["url"]] = m
         except Exception:
             pass
@@ -143,6 +144,15 @@ def main():
     if not out:
         sys.exit("Nem sikerült egyetlen mérkőzést sem letölteni, a régi adat megmarad.")
     OUT.parent.mkdir(exist_ok=True)
+    # ha az adat nem változott és az előző mentés 24 óránál frissebb, nem írjuk újra a fájlt (kisebb tároló-előzmény)
+    if prev_payload and prev_payload.get("meccsek") == out:
+        try:
+            age = now - datetime.fromisoformat(prev_payload["frissitve_iso"])
+            if age < timedelta(hours=24):
+                print(f"Nincs változás ({len(out)} mérkőzés), a fájl marad.")
+                return
+        except Exception:
+            pass
     OUT.write_text(encrypt({"frissitve": now.strftime("%Y.%m.%d %H:%M"),
                             "frissitve_iso": now.isoformat(timespec="minutes"),
                             "hibak": errors[0], "meccsek": out}, pw), encoding="utf-8")
